@@ -1,0 +1,167 @@
+#include <ESP32Servo.h>
+
+Servo myServo;
+
+#define SERVO_PIN 4
+#define TRIGGER_PIN 2
+#define ECHO_PIN 3
+
+float distance = 0;
+int servoAngle = 0;
+unsigned long lastDebugTime = 0;
+int loopCount = 0;
+
+const float TRIGGER_DISTANCE = 15.0;
+const int OPEN_ANGLE = 180;
+const int CLOSE_ANGLE = 0;
+const unsigned long OPEN_TIME = 5000;
+
+bool lidOpen = false;
+unsigned long lidOpenTime = 0;
+
+void setup() {
+  Serial.begin(115200);
+  delay(2000);
+  
+  Serial.println("========================================");
+  Serial.println("SMART TRASH CAN - AUTO OPEN/CLOSE");
+  Serial.println("========================================");
+  
+  pinMode(TRIGGER_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+  
+  Serial.print("Trigger pin: GPIO");
+  Serial.println(TRIGGER_PIN);
+  Serial.print("Echo pin: GPIO");
+  Serial.println(ECHO_PIN);
+  Serial.print("Servo pin: GPIO");
+  Serial.println(SERVO_PIN);
+  
+  myServo.attach(SERVO_PIN);
+  myServo.write(CLOSE_ANGLE);
+  Serial.println("✓ Servo initialized - LID CLOSED");
+  
+  Serial.println("Settings:");
+  Serial.print("- Trigger distance: ≤ ");
+  Serial.print(TRIGGER_DISTANCE);
+  Serial.println(" cm");
+  Serial.print("- Open angle: ");
+  Serial.print(OPEN_ANGLE);
+  Serial.println("°");
+  Serial.print("- Auto close time: ");
+  Serial.print(OPEN_TIME / 1000);
+  Serial.println(" seconds");
+  
+  delay(1000);
+  Serial.println("Ready! Wave hand to open trash can...");
+  Serial.println("----------------------------------------");
+}
+
+void loop() {
+  loopCount++;
+  
+  distance = measureDistance();
+  
+  if (!lidOpen) {
+    if (distance <= TRIGGER_DISTANCE && distance > 0) {
+      openLid();
+    }
+  } else {
+    if (millis() - lidOpenTime >= OPEN_TIME) {
+      closeLid();
+    } else {
+      unsigned long timeLeft = OPEN_TIME - (millis() - lidOpenTime);
+      if (loopCount % 10 == 0) {
+        Serial.print("🟢 LID OPEN - Auto close in: ");
+        Serial.print(timeLeft / 1000);
+        Serial.println(" seconds");
+      }
+    }
+  }
+  
+  if (loopCount % 20 == 0) {
+    Serial.print("Distance: ");
+    Serial.print(distance, 1);
+    Serial.print(" cm | Status: ");
+    if (lidOpen) {
+      Serial.print("OPEN (");
+      Serial.print((OPEN_TIME - (millis() - lidOpenTime)) / 1000);
+      Serial.println("s left)");
+    } else {
+      Serial.println("CLOSED");
+    }
+  }
+  
+  if (millis() - lastDebugTime > 10000) {
+    lastDebugTime = millis();
+    Serial.println("=== STATUS REPORT ===");
+    Serial.print("Loops: ");
+    Serial.println(loopCount);
+    Serial.print("Current distance: ");
+    Serial.print(distance, 1);
+    Serial.println(" cm");
+    Serial.print("Lid status: ");
+    Serial.println(lidOpen ? "OPEN" : "CLOSED");
+    
+    if (distance <= TRIGGER_DISTANCE && !lidOpen) {
+      Serial.println("🔥 READY TO TRIGGER!");
+    }
+    
+    if (distance > 200 || distance < 1) {
+      Serial.println("⚠️  Sensor reading abnormal!");
+    }
+    Serial.println("=====================");
+  }
+  
+  delay(100);
+}
+
+void openLid() {
+  Serial.println(">>> OBJECT DETECTED - OPENING LID <<<");
+  Serial.print("Distance: ");
+  Serial.print(distance, 1);
+  Serial.println(" cm");
+  
+  for (int pos = CLOSE_ANGLE; pos <= OPEN_ANGLE; pos += 10) {
+    myServo.write(pos);
+    delay(15);
+  }
+  
+  lidOpen = true;
+  lidOpenTime = millis();
+  
+  Serial.println("✅ LID FULLY OPEN!");
+  Serial.print("Will auto-close in ");
+  Serial.print(OPEN_TIME / 1000);
+  Serial.println(" seconds");
+}
+
+void closeLid() {
+  Serial.println(">>> AUTO-CLOSING LID <<<");
+  
+  for (int pos = OPEN_ANGLE; pos >= CLOSE_ANGLE; pos -= 10) {
+    myServo.write(pos);
+    delay(15);
+  }
+  
+  lidOpen = false;
+  
+  Serial.println("✅ LID CLOSED - Ready for next use!");
+}
+
+float measureDistance() {
+  digitalWrite(TRIGGER_PIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIGGER_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIGGER_PIN, LOW);
+  
+  long duration = pulseIn(ECHO_PIN, HIGH, 30000);
+  
+  if (duration == 0) {
+    return 999;
+  }
+  
+  float dist = duration * 0.034 / 2;
+  return dist;
+}
